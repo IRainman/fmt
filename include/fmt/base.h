@@ -2642,8 +2642,8 @@ template <typename Context> class basic_format_args {
 // A formatting context.
 class context {
  private:
-  appender out_;
-  format_args args_;
+  FMT_NO_UNIQUE_ADDRESS appender out_;
+  FMT_NO_UNIQUE_ADDRESS format_args args_;
   FMT_NO_UNIQUE_ADDRESS locale_ref loc_;
 
  public:
