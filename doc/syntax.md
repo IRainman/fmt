@@ -594,8 +594,7 @@ The available presentation types (*chrono_type*) are:
 Specifiers that have a calendaric component such as `'d'` (the day of month)
 are valid only for `std::tm` and time points but not durations.
 
-Numeric results are padded with zeros by default. The available padding
-modifiers (*padding_modifier*) are:
+The available padding modifiers (*padding_modifier*) are:
 
 | Type  | Meaning                                 |
 |-------|-----------------------------------------|

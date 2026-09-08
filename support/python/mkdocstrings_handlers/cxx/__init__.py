@@ -245,10 +245,10 @@ class CxxHandler(BaseHandler):
 
         headers = [
             "args.h",
-            "base.h",
             "chrono.h",
             "color.h",
             "compile.h",
+            "core.h",
             "enum.h",
             "format.h",
             "os.h",

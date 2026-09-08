@@ -38,7 +38,7 @@
 #  define FMT_REMOVE_TRANSITIVE_INCLUDES
 #endif
 
-#include "base.h"
+#include "core.h"
 
 // libc++ supports string_view in pre-c++17.
 #if FMT_HAS_INCLUDE(<string_view>) && \

@@ -265,7 +265,7 @@ https://developer.android.com/tools/sdk/ndk/index.html).
 ### Other
 
 To use the {fmt} library with any other build system, add
-`include/fmt/base.h`, `include/fmt/format.h`, `include/fmt/format-inl.h`,
+`include/fmt/core.h`, `include/fmt/format.h`, `include/fmt/format-inl.h`,
 `src/format.cc` and optionally other headers from a [release archive](
 https://github.com/fmtlib/fmt/releases) or the [git repository](
 https://github.com/fmtlib/fmt) to your project, add `include` to include
