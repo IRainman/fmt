@@ -456,6 +456,13 @@ TEST(compile_time_formatting_test, integer) {
   EXPECT_EQ("   42", test_format<6>(FMT_COMPILE("{:5}"), 42l));
   EXPECT_EQ("   42", test_format<6>(FMT_COMPILE("{:5}"), 42ll));
   EXPECT_EQ("   42", test_format<6>(FMT_COMPILE("{:5}"), 42ull));
+#  if FMT_USE_INT128
+  EXPECT_EQ("18446744073709551616",
+            test_format<21>(FMT_COMPILE("{}"),
+                            static_cast<__uint128_t>(UINT64_MAX) + 1));
+  EXPECT_EQ("340282366920938463463374607431768211455",
+            test_format<40>(FMT_COMPILE("{}"), ~static_cast<__uint128_t>(0)));
+#  endif
 
   EXPECT_EQ("42  ", test_format<5>(FMT_COMPILE("{:<4}"), 42));
   EXPECT_EQ("  42", test_format<5>(FMT_COMPILE("{:>4}"), 42));
@@ -514,6 +521,9 @@ TEST(compile_time_formatting_test, floating_point) {
   EXPECT_EQ("+0000392.6", test_format<11>(FMT_COMPILE("{0:+010.4g}"), 392.65));
   EXPECT_EQ("9223372036854775808.000000",
             test_format<27>(FMT_COMPILE("{:f}"), 9223372036854775807.0));
+  EXPECT_EQ("1e+23", test_format<6>(FMT_COMPILE("{}"), 1e23));
+  EXPECT_EQ("9.99999999999999916114e+22",
+            test_format<27>(FMT_COMPILE("{:.20e}"), 1e23));
 
   constexpr double nan = std::numeric_limits<double>::quiet_NaN();
   EXPECT_EQ("nan", test_format<4>(FMT_COMPILE("{}"), nan));

@@ -21,7 +21,7 @@
 #endif
 
 // The fmt library version in the form major * 10000 + minor * 100 + patch.
-#define FMT_VERSION 120201
+#define FMT_VERSION 120202
 
 // Detect compiler versions.
 #if defined(__clang__) && !defined(__ibmxl__)
@@ -462,6 +462,7 @@ constexpr FMT_ALWAYS_INLINE auto narrow(const char* s) -> const char* {
 
 template <typename Char>
 FMT_CONSTEXPR auto compare(const Char* s1, const Char* s2, size_t n) -> int {
+  if (n == 0) return 0;
   if (!is_constant_evaluated() && sizeof(Char) == 1) return memcmp(s1, s2, n);
   for (; n != 0; ++s1, ++s2, --n) {
     if (*s1 < *s2) return -1;

@@ -102,19 +102,19 @@ template <int N> struct ubitint {};
 #if FMT_CPP_LIB_FILESYSTEM
 
 template <typename Char, typename PathChar>
-auto get_path_string(const std::filesystem::path& p,
-                     const std::basic_string<PathChar>& native) {
+auto get_path_string(const std::basic_string<PathChar>& native) {
   if constexpr (std::is_same_v<Char, char> &&
                 std::is_same_v<PathChar, wchar_t>) {
     return to_utf8<wchar_t>(native, to_utf8_error_policy::wtf);
+  } else if constexpr (std::is_same_v<Char, PathChar>) {
+    return basic_string_view<Char>(native);
   } else {
-    return p.string<Char>();
+    return std::filesystem::path(native).string<Char>();
   }
 }
 
 template <typename Char, typename PathChar>
 void write_escaped_path(basic_memory_buffer<Char>& quoted,
-                        const std::filesystem::path& p,
                         const std::basic_string<PathChar>& native) {
   if constexpr (std::is_same_v<Char, char> &&
                 std::is_same_v<PathChar, wchar_t>) {
@@ -126,7 +126,8 @@ void write_escaped_path(basic_memory_buffer<Char>& quoted,
     write_escaped_string<std::filesystem::path::value_type>(
         std::back_inserter(quoted), native);
   } else {
-    write_escaped_string<Char>(std::back_inserter(quoted), p.string<Char>());
+    write_escaped_string<Char>(std::back_inserter(quoted),
+                               std::filesystem::path(native).string<Char>());
   }
 }
 
@@ -337,11 +338,11 @@ template <typename Char> struct formatter<std::filesystem::path, Char> {
     detail::handle_dynamic_spec(specs.dynamic_width(), specs.width, width_ref_,
                                 ctx);
     if (!debug_) {
-      auto s = detail::get_path_string<Char>(p, path_string);
+      auto s = detail::get_path_string<Char>(path_string);
       return detail::write(ctx.out(), basic_string_view<Char>(s), specs);
     }
     auto quoted = basic_memory_buffer<Char>();
-    detail::write_escaped_path(quoted, p, path_string);
+    detail::write_escaped_path(quoted, path_string);
     return detail::write(ctx.out(),
                          basic_string_view<Char>(quoted.data(), quoted.size()),
                          specs);
@@ -372,11 +373,6 @@ struct formatter<std::optional<T>, Char,
                  std::enable_if_t<is_formattable<T, Char>::value>> {
  private:
   formatter<std::remove_cv_t<T>, Char> underlying_;
-  static constexpr basic_string_view<Char> optional =
-      detail::string_literal<Char, 'o', 'p', 't', 'i', 'o', 'n', 'a', 'l',
-                             '('>{};
-  static constexpr basic_string_view<Char> none =
-      detail::string_literal<Char, 'n', 'o', 'n', 'e'>{};
 
  public:
   FMT_CONSTEXPR auto parse(parse_context<Char>& ctx) {
@@ -387,10 +383,10 @@ struct formatter<std::optional<T>, Char,
   template <typename FormatContext>
   auto format(const std::optional<T>& opt, FormatContext& ctx) const
       -> decltype(ctx.out()) {
-    if (!opt) return detail::write<Char>(ctx.out(), none);
+    if (!opt) return detail::write_bytes<Char>(ctx.out(), "none");
 
     auto out = ctx.out();
-    out = detail::write<Char>(out, optional);
+    out = detail::write_bytes<Char>(out, "optional(");
     ctx.advance_to(out);
     out = underlying_.format(*opt, ctx);
     return detail::write(out, ')');
@@ -414,11 +410,11 @@ struct formatter<std::expected<T, E>, Char,
     auto out = ctx.out();
 
     if (value.has_value()) {
-      out = detail::write<Char>(out, "expected(");
+      out = detail::write_bytes<Char>(out, "expected(");
       if constexpr (!std::is_void<T>::value)
         out = detail::write_escaped_alternative<Char>(out, *value, ctx);
     } else {
-      out = detail::write<Char>(out, "unexpected(");
+      out = detail::write_bytes<Char>(out, "unexpected(");
       out = detail::write_escaped_alternative<Char>(out, value.error(), ctx);
     }
     *out++ = ')';
@@ -438,7 +434,7 @@ struct formatter<std::unexpected<E>, Char,
       -> decltype(ctx.out()) {
     auto out = ctx.out();
 
-    out = detail::write<Char>(out, "unexpected(");
+    out = detail::write_bytes<Char>(out, "unexpected(");
     out = detail::write_escaped_alternative<Char>(out, value.error(), ctx);
 
     *out++ = ')';
@@ -481,7 +477,7 @@ template <typename Char> struct formatter<std::monostate, Char> {
   template <typename FormatContext>
   FMT_CONSTEXPR auto format(const std::monostate&, FormatContext& ctx) const
       -> decltype(ctx.out()) {
-    return detail::write<Char>(ctx.out(), "monostate");
+    return detail::write_bytes<Char>(ctx.out(), "monostate");
   }
 };
 
@@ -499,7 +495,7 @@ struct formatter<Variant, Char,
       -> decltype(ctx.out()) {
     auto out = ctx.out();
 
-    out = detail::write<Char>(out, "variant(");
+    out = detail::write_bytes<Char>(out, "variant(");
     FMT_TRY {
       std::visit(
           [&](const auto& v) {
@@ -508,7 +504,7 @@ struct formatter<Variant, Char,
           value);
     }
     FMT_CATCH(const std::bad_variant_access&) {
-      detail::write<Char>(out, "valueless by exception");
+      out = detail::write_bytes<Char>(out, "valueless by exception");
     }
     *out++ = ')';
     return out;

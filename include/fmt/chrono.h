@@ -533,16 +533,13 @@ template <typename To, typename FromRep, typename FromPeriod,
 auto duration_cast(std::chrono::duration<FromRep, FromPeriod> from) -> To {
 #if FMT_SAFE_DURATION_CAST
   using to_rep = typename To::rep;
-  auto count = detail::duration_cast<
-                   std::chrono::duration<FromRep, typename To::period>>(from)
-                   .count();
-  // The conversion truncates toward zero so check the truncated value.
-  // max + 1 is a power of 2 so the cast to FromRep is exact even when max
-  // itself is rounded up by the conversion; the comparison is false for NaN.
-  auto upper = static_cast<FromRep>(max_value<to_rep>()) + 1;
+  using float_duration = std::chrono::duration<FromRep, typename To::period>;
+  auto count = std::trunc(detail::duration_cast<float_duration>(from).count());
+  // The conversion truncates, so check the truncated count against
+  // [min, max + 1) where max + 1 = 2^digits. NaN fails the comparison.
   auto lower = static_cast<FromRep>((std::numeric_limits<to_rep>::min)());
-  auto truncated = std::trunc(count);
-  if (!(truncated >= lower && truncated < upper)) throw_duration_error();
+  auto upper = std::ldexp(FromRep(1), std::numeric_limits<to_rep>::digits);
+  if (!(count >= lower && count < upper)) throw_duration_error();
   return To(static_cast<to_rep>(count));
 #else
   return std::chrono::duration_cast<To>(from);
@@ -1668,30 +1665,33 @@ template <typename Char, typename Rep, typename Period>
 struct duration_formatter {
   using iterator = basic_appender<Char>;
   iterator out;
-  // rep is unsigned to avoid overflow.
-  using rep =
+  // Integral reps are made unsigned so that negating the minimum value can't
+  // overflow, and at least as wide as int to leave headroom for the conversion
+  // to seconds.
+  using abs_rep =
       conditional_t<std::is_integral<Rep>::value && sizeof(Rep) < sizeof(int),
                     unsigned, typename make_unsigned_or_unchanged<Rep>::type>;
-  rep val;
+  abs_rep val;
   int precision;
   locale_ref locale;
   bool localized = false;
-  using seconds = std::chrono::duration<rep>;
+  using seconds = std::chrono::duration<abs_rep>;
   seconds s;
-  using milliseconds = std::chrono::duration<rep, std::milli>;
-  bool negative;
+  using milliseconds = std::chrono::duration<abs_rep, std::milli>;
+  bool negative = false;
 
   using tm_writer_type = tm_writer<iterator, Char>;
 
   duration_formatter(iterator o, std::chrono::duration<Rep, Period> d,
                      locale_ref loc)
-      : out(o), val(static_cast<rep>(d.count())), locale(loc), negative(false) {
+      : out(o), val(static_cast<abs_rep>(d.count())), locale(loc) {
     if (d.count() < 0) {
       val = 0 - val;
       negative = true;
     }
 
-    s = detail::duration_cast<seconds>(std::chrono::duration<rep, Period>(val));
+    s = detail::duration_cast<seconds>(
+        std::chrono::duration<abs_rep, Period>(val));
   }
 
   // If val is NaN or infinite, writes it to out and returns true.
@@ -1706,20 +1706,16 @@ struct duration_formatter {
     return true;
   }
 
-  auto days() const -> Rep { return static_cast<Rep>(s.count() / 86400); }
-  auto hour() const -> Rep {
-    return static_cast<Rep>(mod((s.count() / 3600), 24));
-  }
+  auto days() const -> abs_rep { return s.count() / 86400; }
+  auto hour() const -> abs_rep { return mod(s.count() / 3600, 24); }
 
-  auto hour12() const -> Rep {
-    Rep hour = static_cast<Rep>(mod((s.count() / 3600), 12));
+  auto hour12() const -> abs_rep {
+    auto hour = mod(s.count() / 3600, 12);
     return hour < 1 ? 12 : hour;
   }
 
-  auto minute() const -> Rep {
-    return static_cast<Rep>(mod((s.count() / 60), 60));
-  }
-  auto second() const -> Rep { return static_cast<Rep>(mod(s.count(), 60)); }
+  auto minute() const -> abs_rep { return mod(s.count() / 60, 60); }
+  auto second() const -> abs_rep { return mod(s.count(), 60); }
 
   auto time() const -> std::tm {
     auto time = std::tm();
@@ -1735,7 +1731,7 @@ struct duration_formatter {
     negative = false;
   }
 
-  void write(Rep value, int width, pad_type pad = pad_type::zero) {
+  void write(abs_rep value, int width, pad_type pad = pad_type::zero) {
     write_sign();
     if (isnan(value)) return write_nan();
     uint32_or_64_or_128_t<int> n =
@@ -1822,10 +1818,11 @@ struct duration_formatter {
   void on_second(numeric_system ns, pad_type pad) {
     if (write_if_nonfinite()) return;
 
-    if (ns == numeric_system::standard) {
-      if (std::is_floating_point<rep>::value) {
+    if (ns == numeric_system::standard || !localized ||
+        locale_writer<>::is_classic(locale)) {
+      if (std::is_floating_point<abs_rep>::value) {
         auto buf = memory_buffer();
-        write_floating_seconds(buf, std::chrono::duration<rep, Period>(val),
+        write_floating_seconds(buf, std::chrono::duration<abs_rep, Period>(val),
                                precision);
         write_sign();
         if (buf.size() < 2 || buf[1] == '.')
@@ -1834,7 +1831,7 @@ struct duration_formatter {
       } else {
         write(second(), 2, pad);
         write_fractional_seconds<Char>(
-            out, std::chrono::duration<rep, Period>(val), precision);
+            out, std::chrono::duration<abs_rep, Period>(val), precision);
       }
       return;
     }

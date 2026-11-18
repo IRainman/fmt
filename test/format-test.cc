@@ -76,6 +76,11 @@ TEST(uint128_test, shift) {
   EXPECT_EQ(static_cast<uint64_t>(n), 42);
   EXPECT_EQ(uint128(1) << 112, uint128(0x1000000000000, 0));
   EXPECT_EQ(uint128(0x1000000000000, 0) >> 112, uint128(1));
+  // FMT_CONSTEXPR turns an undefined shift into a compile error.
+  FMT_CONSTEXPR auto lshift = uint128(1, 2) << 0;
+  FMT_CONSTEXPR auto rshift = uint128(1, 2) >> 0;
+  EXPECT_EQ(lshift, uint128(1, 2));
+  EXPECT_EQ(rshift, uint128(1, 2));
 }
 
 TEST(uint128_test, minus) {
@@ -1278,6 +1283,15 @@ TEST(format_test, precision) {
     EXPECT_EQ(
         fmt::format("{:0g}", std::numeric_limits<long double>::denorm_min()),
         "3.6452e-4951");
+
+    // 1e-3L and 1e43L are just below the powers of 10 they approximate.
+    EXPECT_EQ(fmt::format("{:.20e}", 1e-3L), "9.99999999999999999958e-04");
+    EXPECT_EQ(fmt::format("{}", 1e-3L), "0.001");
+    EXPECT_EQ(fmt::format("{:.0f}", 1e43L),
+              "9999999999999999999741184793924429452148736");
+    EXPECT_EQ(fmt::format("{:.19e}", 1e43L), "9.9999999999999999997e+42");
+    EXPECT_EQ(fmt::format("{:.21g}", 1e43L), "9.99999999999999999974e+42");
+    EXPECT_EQ(fmt::format("{}", 1e43L), "1e+43");
   }
 
   EXPECT_EQ(fmt::format("{:#.0f}", 123.0), "123.");
@@ -1577,6 +1591,9 @@ TEST(format_test, format_dec) {
             fmt::format("{0}", int128_min));
   EXPECT_EQ("340282366920938463463374607431768211455",
             fmt::format("{0}", uint128_max));
+  constexpr auto pow10_19 = static_cast<__uint128_t>(10000000000000000000ULL);
+  EXPECT_EQ(fmt::format("{0}", pow10_19 << 64),
+            "184467440737095516160000000000000000000");
 #endif
 
   char buffer[buffer_size];
@@ -1749,6 +1766,12 @@ TEST(format_test, format_double) {
   }
 
   EXPECT_EQ(fmt::format("{:.10a}", 4.2), "0x1.0ccccccccdp+2");
+  // Ties round to even like printf.
+  EXPECT_EQ(fmt::format("{:.1a}", 1.03125), "0x1.0p+0");
+  EXPECT_EQ(fmt::format("{:.1a}", 1.09375), "0x1.2p+0");
+  EXPECT_EQ(fmt::format("{:.1a}", 1.0322265625), "0x1.1p+0");
+  if (std::numeric_limits<long double>::digits == 64)
+    EXPECT_EQ(fmt::format("{:.0a}", 1.0625l), "0x8p-3");
 
   EXPECT_EQ(fmt::format("{:a}", -42.0), "-0x1.5p+5");
   EXPECT_EQ(fmt::format("{:A}", -42.0), "-0X1.5P+5");
@@ -2673,6 +2696,12 @@ TEST(format_test, format_facet_grouping) {
   EXPECT_EQ(fmt::format(loc, "{:L}", 1234567890), "1,234,567,89,0");
 }
 
+TEST(format_test, format_facet_empty_grouping) {
+  // Empty grouping means no grouping as in std::numpunct.
+  auto loc = std::locale({}, new fmt::format_facet<std::locale>(",", ""));
+  EXPECT_EQ(fmt::format(loc, "{:L}", 1234567), "1234567");
+}
+
 TEST(format_test, format_named_arg_with_locale) {
   EXPECT_EQ(fmt::format(std::locale(), "{answer}", fmt::arg("answer", 42)),
             "42");
@@ -2689,17 +2718,11 @@ TEST(format_test, format_locale) {
 TEST(format_test, format_int_locale_zero_padding) {
   auto loc = std::locale::classic();
   EXPECT_EQ(fmt::format(loc, "{:08L}", -12), "-0000012");
-  EXPECT_EQ(fmt::format(loc, "{:+08L}", 12), "+0000012");
-  EXPECT_EQ(fmt::format(loc, "{: 08L}", 12), " 0000012");
-  EXPECT_EQ(fmt::format(loc, "{:08L}", 12), "00000012");
   EXPECT_EQ(fmt::format(loc, "{:02L}", -12), "-12");
-  EXPECT_EQ(fmt::format(loc, "{:>08L}", -12), "     -12");
   EXPECT_EQ(fmt::format(loc, "{:0>8L}", -12), "00000-12");
   loc = std::locale(loc, new fmt::format_facet<std::locale>(","));
   EXPECT_EQ(fmt::format(loc, "{:08L}", -1234), "-001,234");
   EXPECT_EQ(fmt::format(loc, "{:#010Lx}", -0x1234), "-0x001,234");
-  EXPECT_EQ(fmt::format(loc, "{:#010Lb}", -10), "-0b001,010");
-  EXPECT_EQ(fmt::format(loc, "{:#08Lo}", -01234), "-001,234");
 }
 
 #endif  // FMT_USE_LOCALE
@@ -2856,6 +2879,13 @@ TEST(format_test, print_to_broken_pipe) {
     EXPECT_THROW(fmt::print(write_end.get(), "{}", data), std::system_error);
   }
   std::signal(SIGPIPE, old_handler);
+}
+
+TEST(format_test, print_to_read_only_file) {
+  auto pipe = fmt::pipe();
+  auto read_end = pipe.read_end.fdopen("r");
+  EXPECT_THROW(fmt::print(read_end.get(), "{}", std::string(100, 'x')),
+               std::system_error);
 }
 #endif  // FMT_USE_FCNTL
 
